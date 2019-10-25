@@ -8,6 +8,14 @@ edition = "2018"
 license = "MIT"
 publish = false
 
+[lib]
+name = "traffic_tracker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "traffic-tracker-standalone"
+path = "src/standalone/main.rs"
+
 [dependencies]
 log = "0.4"
 env_logger = "0.6"

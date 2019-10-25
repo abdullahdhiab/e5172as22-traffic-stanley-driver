@@ -1,52 +1,14 @@
-mod error;
-use crate::error::*;
-
-mod types;
-use crate::types::{Bytes, Duration};
-
-mod configuration;
-use crate::configuration::*;
-
-mod storage;
-use crate::storage::*;
-
-use chrono::prelude::*;
-
 use log::*;
 
-fn main() -> Result<(), TrafficError> {
-    let configuration = load_configuration()?;
+pub mod error;
+pub mod types;
+pub mod configuration;
+pub mod storage;
 
-    let base_url = reqwest::Url::parse(&configuration.base_url)?;
-    let username = configuration.username;
-    let password = configuration.password;
-    let database = configuration.database;
+use crate::error::*;
+use crate::types::Duration;
 
-    let now: Date<Utc> = Utc::now().date();
-    let today: NaiveDate = now.naive_utc();
-
-    let client = reqwest::Client::new();
-
-    info!("Retrieving current traffic statistics");
-    let session_id = login(&base_url, &client, &username, &password)?;
-    debug!("Session ID: {}", session_id);
-    let total_traffic = get_overview(&base_url, &client, session_id)?;
-    info!("Total traffic: {}", Bytes::new(total_traffic));
-
-    if today.succ().day() == 1 {
-        info!("Today it is the last day of the month, clearing statistics");
-        clear_statistics(&base_url, &client, session_id)?;
-    }
-
-    logout(&base_url, &client, session_id)?;
-
-    info!("Recording traffic statistics in database \"{}\"", database);
-    store_traffic(total_traffic, &database)?;
-
-    Ok(())
-}
-
-fn login(
+pub fn login(
     base_url: &reqwest::Url,
     client: &reqwest::Client,
     username: &str,
@@ -85,7 +47,7 @@ fn login(
     ))
 }
 
-fn logout(
+pub fn logout(
     base_url: &reqwest::Url,
     client: &reqwest::Client,
     session_id: u64,
@@ -106,7 +68,7 @@ fn logout(
     Ok(())
 }
 
-fn clear_statistics(
+pub fn clear_statistics(
     base_url: &reqwest::Url,
     client: &reqwest::Client,
     session_id: u64,
@@ -129,7 +91,7 @@ fn clear_statistics(
     Ok(())
 }
 
-fn get_overview(
+pub fn get_overview(
     base_url: &reqwest::Url,
     client: &reqwest::Client,
     session_id: u64,
