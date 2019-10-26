@@ -170,7 +170,7 @@ fn setup_logging(verbosity: u64) {
 #[derive(Debug, Serialize)]
 struct Payload<'a> {
     data: Vec<(i64, f64)>,
-    name: &'a str,
+    path: &'a str,
 }
 
 fn send_to_database(
@@ -185,7 +185,7 @@ fn send_to_database(
     let now: i64 = Utc::now().timestamp_nanos();
     let payload = Payload {
         data: vec![(now, traffic as f64)],
-        name: path,
+        path: path,
     };
     let encoded = b64encode(format!("{}:{}", username, password).as_bytes());
     let authorization = format!("Basic {}", encoded);
