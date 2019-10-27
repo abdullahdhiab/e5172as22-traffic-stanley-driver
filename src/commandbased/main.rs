@@ -184,7 +184,7 @@ fn send_to_database(
         path: &str,
         client: &reqwest::Client
     ) -> Result<(), TrafficError> {
-    let url = base_url.join("/post")?;
+    let url = base_url.join("/api/v1/post")?;
     let now: i64 = Utc::now().timestamp_nanos();
     let payload_chunk = PayloadChunk {
         readings: vec![(now, traffic as f64)],
