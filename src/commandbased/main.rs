@@ -54,6 +54,7 @@ fn main() -> Result<(), TrafficError> {
             let total_traffic = get_overview(&router_base_url, &client, session_id)?;
             info!("Total traffic: {}", Bytes::new(total_traffic));
             logout(&router_base_url, &client, session_id)?;
+            info!("Storing value to database");
             send_to_database(
                 total_traffic,
                 &database_base_url,
@@ -168,10 +169,12 @@ fn setup_logging(verbosity: u64) {
 }
 
 #[derive(Debug, Serialize)]
-struct Payload<'a> {
-    data: Vec<(i64, f64)>,
+struct PayloadChunk<'a> {
+    readings: Vec<(i64, f64)>,
     path: &'a str,
 }
+
+type Payload<'a> = Vec<PayloadChunk<'a>>;
 
 fn send_to_database(
         traffic: i64,
@@ -183,10 +186,11 @@ fn send_to_database(
     ) -> Result<(), TrafficError> {
     let url = base_url.join("/post")?;
     let now: i64 = Utc::now().timestamp_nanos();
-    let payload = Payload {
-        data: vec![(now, traffic as f64)],
+    let payload_chunk = PayloadChunk {
+        readings: vec![(now, traffic as f64)],
         path: path,
     };
+    let payload: Payload = vec![payload_chunk];
     let encoded = b64encode(format!("{}:{}", username, password).as_bytes());
     let authorization = format!("Basic {}", encoded);
     let request = client.post(url)
@@ -195,7 +199,6 @@ fn send_to_database(
         .build()?;
     debug!("Sending request: {:?}", request);
     debug!("Payload: {:?}", serde_json::to_string(&payload));
-    let response_maybe = client.execute(request);
-    info!("{:?}", response_maybe);
+    client.execute(request)?;
     Ok(())
 }
