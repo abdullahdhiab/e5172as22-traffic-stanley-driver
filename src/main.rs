@@ -1,217 +1,253 @@
-mod error;
-use crate::error::*;
+// Copyright Claudio Mattera 2019.
+// Distributed under the MIT License.
+// See accompanying file License.txt, or online at
+// https://opensource.org/licenses/MIT
 
-mod types;
-use crate::types::{Bytes, Duration};
-
-mod configuration;
-use crate::configuration::*;
-
-mod storage;
-use crate::storage::*;
-
-use chrono::prelude::*;
+use std::env;
+use std::fs::File;
+use std::io::Read;
 
 use log::*;
 
-fn main() -> Result<(), TrafficError> {
-    let configuration = load_configuration()?;
+use env_logger;
 
-    let base_url = reqwest::Url::parse(&configuration.base_url)?;
-    let username = configuration.username;
-    let password = configuration.password;
-    let database = configuration.database;
+use chrono::prelude::*;
 
-    let now: Date<Utc> = Utc::now().date();
-    let today: NaiveDate = now.naive_utc();
+use serde::Serialize;
 
-    let client = reqwest::Client::new();
+use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version,
+    Arg, ArgMatches, SubCommand
+};
 
+use base64::encode as b64encode;
+
+extern crate traffic;
+
+use traffic::error::TrafficError;
+use traffic::types::Bytes;
+use traffic::{clear_statistics, get_overview, login, logout};
+
+fn main() {
+    match inner() {
+        Ok(_) => {}
+        Err(error) => error!("Error: {}", error),
+    }
+}
+
+fn inner() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = parse_command_line();
+
+    setup_logging(matches.occurrences_of("v"));
+
+    let router_base_url = reqwest::Url::parse(&matches.value_of("router-url").unwrap())?;
+    let router_username = matches.value_of("router-username").unwrap();
+    let router_password = matches.value_of("router-password").unwrap();
+
+    let mut client_builder = reqwest::ClientBuilder::new();
+    if matches.is_present("ignore-certificates") {
+        client_builder = client_builder.danger_accept_invalid_certs(true);
+    }
+    if let Some(ca_cert_path) = matches.value_of("ca-cert") {
+        let mut buffer = Vec::new();
+        File::open(ca_cert_path)?.read_to_end(&mut buffer)?;
+        let ca_certificate = reqwest::Certificate::from_pem(&buffer)?;
+        client_builder = client_builder.add_root_certificate(ca_certificate)
+    }
+
+    let client = client_builder.build()?;
+
+    match matches.subcommand() {
+        ("read", Some(_)) => {
+            read_traffic(&router_base_url, &client, router_username, router_password)?;
+        }
+        ("clear", Some(_)) => clear_traffic(&router_base_url, &client, router_username, router_password)?,
+        ("read-and-store", Some(subcommand)) => {
+            let stanley_base_url = reqwest::Url::parse(&subcommand.value_of("stanley-url").unwrap())?;
+            let stanley_username = subcommand.value_of("stanley-username").unwrap();
+            let stanley_password = get_password_from_environment_variable()?;
+            let time_series_path = subcommand.value_of("stanley-path").unwrap();
+
+            let total_traffic = read_traffic(&router_base_url, &client, router_username, router_password)?;
+            post_reading_to_stanley(
+                total_traffic,
+                &stanley_base_url,
+                stanley_username,
+                &stanley_password,
+                time_series_path,
+                &client,
+            )?;
+        }
+        _ => println!("{}", matches.usage()),
+    }
+
+    Ok(())
+}
+
+fn parse_command_line() -> ArgMatches<'static> {
+    app_from_crate!()
+        .after_help("Stanley password is read from environment variable STANLEY_PASSWORD")
+        .arg(
+            Arg::with_name("v")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("Verbosity level"),
+        )
+        .arg(
+            Arg::with_name("ca-cert")
+                .long("ca-cert")
+                .help("Additional CA certificate for HTTPS connections")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("ignore-certificates")
+                .long("ignore-certificates")
+                .help("Ignore certificate validation for HTTPS"),
+        )
+        .arg(
+            Arg::with_name("router-url")
+                .long("router-url")
+                .required(true)
+                .help("URL of the router")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("router-username")
+                .long("router-username")
+                .required(true)
+                .help("Username of the router")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("router-password")
+                .long("router-password")
+                .required(true)
+                .help("Password of the router")
+                .takes_value(true),
+        )
+        .subcommand(
+            SubCommand::with_name("read")
+                .about("Reads traffic data from the router")
+        )
+        .subcommand(
+            SubCommand::with_name("clear")
+                .about("Clears traffic data in the router")
+        )
+        .subcommand(
+            SubCommand::with_name("read-and-store")
+                .about("Reads traffic data from the router and stores it to a Stanley server")
+                .arg(
+                    Arg::with_name("stanley-url")
+                        .long("stanley-url")
+                        .required(true)
+                        .help("URL of Stanley server")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("stanley-path")
+                        .long("stanley-path")
+                        .required(true)
+                        .help("Path of time-series")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("stanley-username")
+                        .long("stanley-username")
+                        .required(true)
+                        .help("Username of for Stanley server")
+                        .takes_value(true),
+                )
+        )
+        .get_matches()
+}
+
+fn setup_logging(verbosity: u64) {
+    let default_log_filter = match verbosity {
+        0 => "traffic=warn,e5172as22_traffic_stanley_driver=warn",
+        1 => "traffic=info,e5172as22_traffic_stanley_driver=info",
+        2 | _ => "traffic=debug,e5172as22_traffic_stanley_driver=debug",
+    };
+    let filter = env_logger::Env::default().default_filter_or(default_log_filter);
+    env_logger::Builder::from_env(filter).init();
+}
+
+fn get_password_from_environment_variable() -> Result<String, Box<dyn std::error::Error>> {
+    let password = env::var_os("STANLEY_PASSWORD")
+        .ok_or_else(|| TrafficError::new("Missing environment variable STANLEY_PASSWORD".to_string()))?
+        .into_string()
+        .map_err(|_| {
+            TrafficError::new("Invalid STANLEY_PASSWORD environment variable content".to_string())
+        })?;
+
+    debug!("Removing STANLEY_PASSWORD from environment");
+    env::remove_var("STANLEY_PASSWORD");
+
+    Ok(password)
+}
+
+fn read_traffic(
+        router_base_url: &reqwest::Url,
+        client: &reqwest::Client,
+        router_username: &str,
+        router_password: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
     info!("Retrieving current traffic statistics");
-    let session_id = login(&base_url, &client, &username, &password)?;
+    let session_id = login(&router_base_url, client, router_username, router_password)?;
     debug!("Session ID: {}", session_id);
-    let total_traffic = get_overview(&base_url, &client, session_id)?;
+    let total_traffic = get_overview(router_base_url, client, session_id)?;
     info!("Total traffic: {}", Bytes::new(total_traffic));
+    logout(router_base_url, client, session_id)?;
+    Ok(total_traffic)
+}
 
-    if today.succ().day() == 1 {
-        info!("Today it is the last day of the month, clearing statistics");
-        clear_statistics(&base_url, &client, session_id)?;
-    }
-
-    logout(&base_url, &client, session_id)?;
-
-    info!("Recording traffic statistics in database \"{}\"", database);
-    store_traffic(total_traffic, &database)?;
-
+fn clear_traffic(
+        router_base_url: &reqwest::Url,
+        client: &reqwest::Client,
+        router_username: &str,
+        router_password: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Clearing traffic statistics");
+    let session_id = login(router_base_url, client, router_username, router_password)?;
+    debug!("Session ID: {}", session_id);
+    info!("Clearing traffic statistics");
+    clear_statistics(router_base_url, client, session_id)?;
+    logout(router_base_url, client, session_id)?;
     Ok(())
 }
 
-fn login(
-    base_url: &reqwest::Url,
-    client: &reqwest::Client,
-    username: &str,
-    password: &str,
-) -> Result<u64, TrafficError> {
-    debug!("Logging in");
-    let params = [("Username", username), ("Password", password)];
-    let url = base_url.join("/index/login.cgi")?;
-
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, "Language=en_us.".parse().unwrap());
-
-    let request = client.post(url)
-        .form(&params)
-        .headers(headers)
-        .build()?;
-
-    let response = process_request(&client, request)?;
-
-    if let Some(cookie) = response.headers().get(reqwest::header::SET_COOKIE) {
-        let mut cookie = cookie.to_str()?.to_string();
-        let index = cookie.find(';').unwrap();
-        cookie.truncate(index);
-        if cookie.find("SessionID_R3=").is_some() {
-            let session_id = cookie.split_off("SessionID_R3=".len());
-            let session_id: u64 = session_id.parse()?;
-            return Ok(session_id);
-        }
-        return Err(TrafficError::new(
-            "Did not receive a new session id".to_string(),
-        ));
-    }
-
-    Err(TrafficError::new(
-        "Did not receive a new cookie".to_string(),
-    ))
+#[derive(Debug, Serialize)]
+struct PayloadChunk<'a> {
+    readings: Vec<(i64, f64)>,
+    path: &'a str,
 }
 
-fn logout(
-    base_url: &reqwest::Url,
-    client: &reqwest::Client,
-    session_id: u64,
-) -> Result<(), TrafficError> {
+type Payload<'a> = Vec<PayloadChunk<'a>>;
 
-    debug!("Logging out");
-
-    let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
-
-    let url = base_url.join("/index/logout.cgi")?;
+fn post_reading_to_stanley(
+        traffic: i64,
+        base_url: &reqwest::Url,
+        username: &str,
+        password: &str,
+        path: &str,
+        client: &reqwest::Client
+    ) -> Result<(), Box<dyn std::error::Error>> {
+    let url = base_url.join("/api/v1/post")?;
+    let now: i64 = Utc::now().timestamp_nanos();
+    let payload_chunk = PayloadChunk {
+        readings: vec![(now, traffic as f64)],
+        path,
+    };
+    let payload: Payload = vec![payload_chunk];
+    let encoded = b64encode(format!("{}:{}", username, password).as_bytes());
+    let authorization = format!("Basic {}", encoded);
     let request = client.post(url)
-        .headers(headers)
+        .header(reqwest::header::AUTHORIZATION, authorization)
+        .json(&payload)
         .build()?;
-    let _response = process_request(&client, request)?;
+    debug!("Sending request: {:?}", request);
+    debug!("Payload: {:?}", serde_json::to_string(&payload));
+    client.execute(request)?
+        .error_for_status()?;
 
     Ok(())
-}
-
-fn clear_statistics(
-    base_url: &reqwest::Url,
-    client: &reqwest::Client,
-    session_id: u64,
-) -> Result<(), TrafficError> {
-
-    debug!("Logging out");
-
-    let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
-
-    let url = base_url.join("/html/status/cleanWanStatisticsData.cgi")?;
-    let params = [("RequestFile", "/html/status/overview.asp")];
-    let request = client.post(url)
-        .form(&params)
-        .headers(headers)
-        .build()?;
-    let _response = process_request(&client, request)?;
-
-    Ok(())
-}
-
-fn get_overview(
-    base_url: &reqwest::Url,
-    client: &reqwest::Client,
-    session_id: u64,
-) -> Result<i64, TrafficError> {
-
-    debug!("Getting overview");
-
-    let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
-    headers.insert(
-        reqwest::header::REFERER,
-        "http://192.168.1.1/index/login.cgi".parse().unwrap(),
-    );
-
-    let url = base_url.join("/html/status/overview.asp")?;
-    let request = client.get(url)
-        .headers(headers)
-        .build()?;
-
-    let mut response = process_request(&client, request)?;
-
-    let mut text = response.text()?;
-
-    if let Some(index) = text.find("WanStatistics = {") {
-        let mut text = text.split_off(index + "WanStatistics = ".len());
-        if let Some(index) = text.find('}') {
-            text.truncate(index + 1);
-            // { uprate' : '0' , 'downrate' : '0' , 'upvolume' : '0' , 'downvolume' : '0' , 'liveTime' : '0' }
-            let text = text.replace("'", "\"");
-            let dict: serde_json::Value = serde_json::from_str(&text)?;
-            let upvolume: i64 = dict.get("upvolume").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
-            let downvolume: i64 = dict.get("downvolume").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
-            let livetime: u64 = dict.get("liveTime").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
-            let livetime = Duration::from_secs(livetime);
-            let total_traffic = upvolume + downvolume;
-            debug!("Total traffic: {}", total_traffic);
-            debug!("Livetime: {}", livetime);
-            return Ok(total_traffic);
-        } else {
-            Err(TrafficError::new("No closing brace".to_string()))
-        }
-    } else {
-        Err(TrafficError::new("No WanStatistics structure".to_string()))
-    }
-}
-
-fn process_request(
-    client: &reqwest::Client,
-    request: reqwest::Request,
-) -> Result<reqwest::Response, TrafficError> {
-
-    let url = request.url().clone();
-    debug!("T {} -> {}", "this", url);
-    debug!("{} {} HTTP/1.1.", request.method(), url);
-    for (key, value) in request.headers().iter() {
-        debug!("{:?}: {:?}.", key, value);
-    }
-    if let Some(body) = request.body() {
-        debug!("");
-        debug!("");
-        debug!("{:#?}", body);
-    }
-    debug!("");
-    debug!("");
-
-    let response = client.execute(request)?;
-    debug!("T {} -> {}", url, "this");
-    debug!(
-        "HTTP/1.1 {} {}.",
-        response.status().as_u16(),
-        response.status().as_str(),
-    );
-    for (key, value) in response.headers().iter() {
-        debug!("{:?}: {:?}.", key, value);
-    }
-
-    Ok(response)
 }

@@ -1,5 +1,9 @@
-use std::fmt;
+// Copyright Claudio Mattera 2019.
+// Distributed under the MIT License.
+// See accompanying file License.txt, or online at
+// https://opensource.org/licenses/MIT
 
+use std::fmt;
 
 #[derive(Debug)]
 pub struct TrafficError(String);
@@ -52,20 +56,8 @@ impl From<reqwest::header::ToStrError> for TrafficError {
     }
 }
 
-impl From<toml::de::Error> for TrafficError {
-    fn from(error: toml::de::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
-
 impl From<serde_json::error::Error> for TrafficError {
     fn from(error: serde_json::error::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
-
-impl From<rusqlite::Error> for TrafficError {
-    fn from(error: rusqlite::Error) -> Self {
         TrafficError(error.to_string())
     }
 }
