@@ -17,11 +17,11 @@ use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_v
 
 use base64::encode as b64encode;
 
-extern crate traffic_tracker;
+extern crate e5172as22_traffic;
 
-use traffic_tracker::error::TrafficError;
-use traffic_tracker::types::Bytes;
-use traffic_tracker::{clear_statistics, get_overview, login, logout};
+use e5172as22_traffic::error::TrafficError;
+use e5172as22_traffic::types::Bytes;
+use e5172as22_traffic::{clear_statistics, get_overview, login, logout};
 
 fn main() {
     match inner() {
