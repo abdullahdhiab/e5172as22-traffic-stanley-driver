@@ -22,10 +22,22 @@ This application is written in [Rust], a type-safe system language, and uses [St
 [Stanley]: https://gitlab.com/claudiomattera/stanley/
 
 
+Installation
+----
+
+This application can be installed from source, provided the Rust toolchain is installed, by running the command:
+
+~~~~bash
+cargo install --path .
+~~~~
+
+Otherwise, precompiled binaries could be available in the repository (check the *tags* section).
+
+
 Usage
 ----
 
-This application is made of a single executable `e5172as22-traffic-stanley-driver` which can be run as follows.
+This application is made of a single command-line executable `e5172as22-traffic-stanley-driver` which can be run as follows.
 
 The router password must be encoded according to the router configuration.
 I have not been able to figure out what hashing and encoding algorithm is was used, but the encoded password can be obtained using a network analyser and manually log on to the router.
