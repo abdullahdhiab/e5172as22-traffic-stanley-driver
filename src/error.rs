@@ -56,20 +56,8 @@ impl From<reqwest::header::ToStrError> for TrafficError {
     }
 }
 
-impl From<toml::de::Error> for TrafficError {
-    fn from(error: toml::de::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
-
 impl From<serde_json::error::Error> for TrafficError {
     fn from(error: serde_json::error::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
-
-impl From<rusqlite::Error> for TrafficError {
-    fn from(error: rusqlite::Error) -> Self {
         TrafficError(error.to_string())
     }
 }
