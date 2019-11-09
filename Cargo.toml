@@ -9,7 +9,7 @@ license = "MIT"
 publish = false
 
 [lib]
-name = "e5172as22_traffic"
+name = "traffic"
 path = "src/lib.rs"
 
 [[bin]]

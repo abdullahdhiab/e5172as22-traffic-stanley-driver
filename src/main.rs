@@ -21,11 +21,11 @@ use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_v
 
 use base64::encode as b64encode;
 
-extern crate e5172as22_traffic;
+extern crate traffic;
 
-use e5172as22_traffic::error::TrafficError;
-use e5172as22_traffic::types::Bytes;
-use e5172as22_traffic::{clear_statistics, get_overview, login, logout};
+use traffic::error::TrafficError;
+use traffic::types::Bytes;
+use traffic::{clear_statistics, get_overview, login, logout};
 
 fn main() {
     match inner() {
@@ -163,9 +163,9 @@ fn parse_command_line() -> ArgMatches<'static> {
 
 fn setup_logging(verbosity: u64) {
     let default_log_filter = match verbosity {
-        0 => "traffic_tracker=warn",
-        1 => "traffic_tracker=info",
-        2 | _ => "traffic_tracker=debug",
+        0 => "traffic=warn,e5172as22_traffic_stanley_driver=warn",
+        1 => "traffic=info,e5172as22_traffic_stanley_driver=info",
+        2 | _ => "traffic=debug,e5172as22_traffic_stanley_driver=debug",
     };
     let filter = env_logger::Env::default().default_filter_or(default_log_filter);
     env_logger::Builder::from_env(filter).init();
