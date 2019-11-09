@@ -13,12 +13,8 @@ name = "traffic_tracker"
 path = "src/lib.rs"
 
 [[bin]]
-name = "traffic-tracker-standalone"
-path = "src/standalone/main.rs"
-
-[[bin]]
-name = "traffic-tracker-commandbased"
-path = "src/commandbased/main.rs"
+name = "traffic-tracker"
+path = "src/main.rs"
 
 [dependencies]
 log = "0.4"

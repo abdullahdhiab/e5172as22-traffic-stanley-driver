@@ -2,8 +2,6 @@ use log::*;
 
 pub mod error;
 pub mod types;
-pub mod configuration;
-pub mod storage;
 
 use crate::error::*;
 use crate::types::Duration;
@@ -52,7 +50,6 @@ pub fn logout(
     client: &reqwest::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
-
     debug!("Logging out");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
@@ -73,7 +70,6 @@ pub fn clear_statistics(
     client: &reqwest::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
-
     debug!("Logging out");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
@@ -96,7 +92,6 @@ pub fn get_overview(
     client: &reqwest::Client,
     session_id: u64,
 ) -> Result<i64, TrafficError> {
-
     debug!("Getting overview");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
@@ -123,20 +118,23 @@ pub fn get_overview(
             // { uprate' : '0' , 'downrate' : '0' , 'upvolume' : '0' , 'downvolume' : '0' , 'liveTime' : '0' }
             let text = text.replace("'", "\"");
             let dict: serde_json::Value = serde_json::from_str(&text)?;
-            let upvolume: i64 = dict.get("upvolume").unwrap()
+            let upvolume: i64 = dict
+                .get("upvolume").unwrap()
                 .as_str().unwrap()
                 .parse().unwrap();
-            let downvolume: i64 = dict.get("downvolume").unwrap()
+            let downvolume: i64 = dict
+                .get("downvolume").unwrap()
                 .as_str().unwrap()
                 .parse().unwrap();
-            let livetime: u64 = dict.get("liveTime").unwrap()
+            let livetime: u64 = dict
+                .get("liveTime").unwrap()
                 .as_str().unwrap()
                 .parse().unwrap();
             let livetime = Duration::from_secs(livetime);
             let total_traffic = upvolume + downvolume;
             debug!("Total traffic: {}", total_traffic);
             debug!("Livetime: {}", livetime);
-            return Ok(total_traffic);
+            Ok(total_traffic)
         } else {
             Err(TrafficError::new("No closing brace".to_string()))
         }
@@ -149,7 +147,6 @@ fn process_request(
     client: &reqwest::Client,
     request: reqwest::Request,
 ) -> Result<reqwest::Response, TrafficError> {
-
     let url = request.url().clone();
     debug!("T {} -> {}", "this", url);
     debug!("{} {} HTTP/1.1.", request.method(), url);

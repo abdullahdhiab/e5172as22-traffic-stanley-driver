@@ -1,25 +1,36 @@
 
+use std::env;
 use std::fs::File;
 use std::io::Read;
 
 use log::*;
+
 use env_logger;
 
 use chrono::prelude::*;
 
 use serde::Serialize;
 
-use clap::{Arg, ArgMatches, SubCommand, app_from_crate, crate_name, crate_version, crate_authors, crate_description};
+use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version,
+    Arg, ArgMatches, SubCommand
+};
 
 use base64::encode as b64encode;
 
 extern crate traffic_tracker;
 
-use traffic_tracker::*;
 use traffic_tracker::error::TrafficError;
 use traffic_tracker::types::Bytes;
+use traffic_tracker::{clear_statistics, get_overview, login, logout};
 
-fn main() -> Result<(), TrafficError> {
+fn main() {
+    match inner() {
+        Ok(_) => {}
+        Err(error) => error!("Error: {}", error),
+    }
+}
+
+fn inner() -> Result<(), Box<dyn std::error::Error>> {
     let matches = parse_command_line();
 
     setup_logging(matches.occurrences_of("v"));
@@ -42,37 +53,27 @@ fn main() -> Result<(), TrafficError> {
     let client = client_builder.build()?;
 
     match matches.subcommand() {
-        ("read",  Some(subcommand)) => {
-            let database_base_url = reqwest::Url::parse(&subcommand.value_of("database-url").unwrap())?;
-            let database_username = subcommand.value_of("database-username").unwrap();
-            let database_password = subcommand.value_of("database-password").unwrap();
-            let database_path = subcommand.value_of("database-path").unwrap();
+        ("read", Some(_)) => {
+            read_traffic(&router_base_url, &client, router_username, router_password)?;
+        }
+        ("clear", Some(_)) => clear_traffic(&router_base_url, &client, router_username, router_password)?,
+        ("read-and-store", Some(subcommand)) => {
+            let stanley_base_url = reqwest::Url::parse(&subcommand.value_of("stanley-url").unwrap())?;
+            let stanley_username = subcommand.value_of("stanley-username").unwrap();
+            let stanley_password = get_password_from_environment_variable()?;
+            let time_series_path = subcommand.value_of("stanley-path").unwrap();
 
-            info!("Retrieving current traffic statistics");
-            let session_id = login(&router_base_url, &client, &router_username, &router_password)?;
-            debug!("Session ID: {}", session_id);
-            let total_traffic = get_overview(&router_base_url, &client, session_id)?;
-            info!("Total traffic: {}", Bytes::new(total_traffic));
-            logout(&router_base_url, &client, session_id)?;
-            info!("Storing value to database");
-            send_to_database(
+            let total_traffic = read_traffic(&router_base_url, &client, router_username, router_password)?;
+            post_reading_to_stanley(
                 total_traffic,
-                &database_base_url,
-                database_username,
-                database_password,
-                database_path,
+                &stanley_base_url,
+                stanley_username,
+                &stanley_password,
+                time_series_path,
                 &client,
             )?;
-        },
-        ("clear",   Some(_)) => {
-            info!("Clearing traffic statistics");
-            let session_id = login(&router_base_url, &client, &router_username, &router_password)?;
-            debug!("Session ID: {}", session_id);
-            info!("Clearing traffic statistics");
-            clear_statistics(&router_base_url, &client, session_id)?;
-            logout(&router_base_url, &client, session_id)?;
-        },
-        _ => {},
+        }
+        _ => println!("{}", matches.usage()),
     }
 
     Ok(())
@@ -80,6 +81,7 @@ fn main() -> Result<(), TrafficError> {
 
 fn parse_command_line() -> ArgMatches<'static> {
     app_from_crate!()
+        .after_help("Stanley password is read from environment variable STANLEY_PASSWORD")
         .arg(
             Arg::with_name("v")
                 .short("v")
@@ -122,38 +124,35 @@ fn parse_command_line() -> ArgMatches<'static> {
         .subcommand(
             SubCommand::with_name("read")
                 .about("Reads traffic data from the router")
-                .arg(
-                    Arg::with_name("database-url")
-                        .long("database-url")
-                        .required(true)
-                        .help("URL of the database")
-                        .takes_value(true),
-                )
-                .arg(
-                    Arg::with_name("database-path")
-                        .long("database-path")
-                        .required(true)
-                        .help("Path of time-series in the database")
-                        .takes_value(true),
-                )
-                .arg(
-                    Arg::with_name("database-username")
-                        .long("database-username")
-                        .required(true)
-                        .help("Username of the database")
-                        .takes_value(true),
-                )
-                .arg(
-                    Arg::with_name("database-password")
-                        .long("database-password")
-                        .required(true)
-                        .help("Password of the database")
-                        .takes_value(true),
-                )
         )
         .subcommand(
             SubCommand::with_name("clear")
                 .about("Clears traffic data in the router")
+        )
+        .subcommand(
+            SubCommand::with_name("read-and-store")
+                .about("Reads traffic data from the router and stores it to a Stanley server")
+                .arg(
+                    Arg::with_name("stanley-url")
+                        .long("stanley-url")
+                        .required(true)
+                        .help("URL of Stanley server")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("stanley-path")
+                        .long("stanley-path")
+                        .required(true)
+                        .help("Path of time-series")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("stanley-username")
+                        .long("stanley-username")
+                        .required(true)
+                        .help("Username of for Stanley server")
+                        .takes_value(true),
+                )
         )
         .get_matches()
 }
@@ -168,6 +167,50 @@ fn setup_logging(verbosity: u64) {
     env_logger::Builder::from_env(filter).init();
 }
 
+fn get_password_from_environment_variable() -> Result<String, Box<dyn std::error::Error>> {
+    let password = env::var_os("STANLEY_PASSWORD")
+        .ok_or_else(|| TrafficError::new("Missing environment variable STANLEY_PASSWORD".to_string()))?
+        .into_string()
+        .map_err(|_| {
+            TrafficError::new("Invalid STANLEY_PASSWORD environment variable content".to_string())
+        })?;
+
+    debug!("Removing STANLEY_PASSWORD from environment");
+    env::remove_var("STANLEY_PASSWORD");
+
+    Ok(password)
+}
+
+fn read_traffic(
+        router_base_url: &reqwest::Url,
+        client: &reqwest::Client,
+        router_username: &str,
+        router_password: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+    info!("Retrieving current traffic statistics");
+    let session_id = login(&router_base_url, client, router_username, router_password)?;
+    debug!("Session ID: {}", session_id);
+    let total_traffic = get_overview(router_base_url, client, session_id)?;
+    info!("Total traffic: {}", Bytes::new(total_traffic));
+    logout(router_base_url, client, session_id)?;
+    Ok(total_traffic)
+}
+
+fn clear_traffic(
+        router_base_url: &reqwest::Url,
+        client: &reqwest::Client,
+        router_username: &str,
+        router_password: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Clearing traffic statistics");
+    let session_id = login(router_base_url, client, router_username, router_password)?;
+    debug!("Session ID: {}", session_id);
+    info!("Clearing traffic statistics");
+    clear_statistics(router_base_url, client, session_id)?;
+    logout(router_base_url, client, session_id)?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 struct PayloadChunk<'a> {
     readings: Vec<(i64, f64)>,
@@ -176,19 +219,19 @@ struct PayloadChunk<'a> {
 
 type Payload<'a> = Vec<PayloadChunk<'a>>;
 
-fn send_to_database(
+fn post_reading_to_stanley(
         traffic: i64,
         base_url: &reqwest::Url,
         username: &str,
         password: &str,
         path: &str,
         client: &reqwest::Client
-    ) -> Result<(), TrafficError> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
     let url = base_url.join("/api/v1/post")?;
     let now: i64 = Utc::now().timestamp_nanos();
     let payload_chunk = PayloadChunk {
         readings: vec![(now, traffic as f64)],
-        path: path,
+        path,
     };
     let payload: Payload = vec![payload_chunk];
     let encoded = b64encode(format!("{}:{}", username, password).as_bytes());
@@ -199,6 +242,8 @@ fn send_to_database(
         .build()?;
     debug!("Sending request: {:?}", request);
     debug!("Payload: {:?}", serde_json::to_string(&payload));
-    client.execute(request)?;
+    client.execute(request)?
+        .error_for_status()?;
+
     Ok(())
 }
