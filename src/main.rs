@@ -13,8 +13,6 @@ use env_logger;
 
 use chrono::prelude::*;
 
-use serde::Serialize;
-
 use clap::{app_from_crate, crate_authors, crate_description, crate_name, crate_version,
     Arg, ArgMatches, SubCommand
 };
@@ -62,18 +60,20 @@ fn inner() -> Result<(), Box<dyn std::error::Error>> {
         }
         ("clear", Some(_)) => clear_traffic(&router_base_url, &client, router_username, router_password)?,
         ("read-and-store", Some(subcommand)) => {
-            let stanley_base_url = reqwest::Url::parse(&subcommand.value_of("stanley-url").unwrap())?;
-            let stanley_username = subcommand.value_of("stanley-username").unwrap();
-            let stanley_password = get_password_from_environment_variable()?;
-            let time_series_path = subcommand.value_of("stanley-path").unwrap();
+            let influxdb_base_url = reqwest::Url::parse(&subcommand.value_of("influxdb-url").unwrap())?;
+            let influxdb_username = subcommand.value_of("influxdb-username").unwrap();
+            let influxdb_password = get_password_from_environment_variable()?;
+            let influxdb_database = subcommand.value_of("influxdb-database").unwrap();
+            let influxdb_tags = subcommand.values_of("influxdb-tag").unwrap().collect();
 
             let total_traffic = read_traffic(&router_base_url, &client, router_username, router_password)?;
-            post_reading_to_stanley(
+            post_reading_to_influxdb(
                 total_traffic,
-                &stanley_base_url,
-                stanley_username,
-                &stanley_password,
-                time_series_path,
+                &influxdb_base_url,
+                influxdb_username,
+                &influxdb_password,
+                influxdb_database,
+                influxdb_tags,
                 &client,
             )?;
         }
@@ -85,7 +85,7 @@ fn inner() -> Result<(), Box<dyn std::error::Error>> {
 
 fn parse_command_line() -> ArgMatches<'static> {
     app_from_crate!()
-        .after_help("Stanley password is read from environment variable STANLEY_PASSWORD")
+        .after_help("Influxdb password is read from environment variable INFLUXDB_PASSWORD")
         .arg(
             Arg::with_name("v")
                 .short("v")
@@ -135,26 +135,34 @@ fn parse_command_line() -> ArgMatches<'static> {
         )
         .subcommand(
             SubCommand::with_name("read-and-store")
-                .about("Reads traffic data from the router and stores it to a Stanley server")
+                .about("Reads traffic data from the router and stores it to an Influxdb server")
                 .arg(
-                    Arg::with_name("stanley-url")
-                        .long("stanley-url")
+                    Arg::with_name("influxdb-url")
+                        .long("influxdb-url")
                         .required(true)
-                        .help("URL of Stanley server")
+                        .help("URL of Influxdb server")
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("stanley-path")
-                        .long("stanley-path")
+                    Arg::with_name("influxdb-tag")
+                        .long("influxdb-tag")
                         .required(true)
-                        .help("Path of time-series")
+                        .help("Tags for Influxdb measurement")
+                        .takes_value(true)
+                        .multiple(true),
+                )
+                .arg(
+                    Arg::with_name("influxdb-username")
+                        .long("influxdb-username")
+                        .required(true)
+                        .help("Username for the Influxdb server")
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("stanley-username")
-                        .long("stanley-username")
+                    Arg::with_name("influxdb-database")
+                        .long("influxdb-database")
                         .required(true)
-                        .help("Username of for Stanley server")
+                        .help("Database name for the Influxdb server")
                         .takes_value(true),
                 )
         )
@@ -163,24 +171,24 @@ fn parse_command_line() -> ArgMatches<'static> {
 
 fn setup_logging(verbosity: u64) {
     let default_log_filter = match verbosity {
-        0 => "traffic=warn,e5172as22_traffic_stanley_driver=warn",
-        1 => "traffic=info,e5172as22_traffic_stanley_driver=info",
-        2 | _ => "traffic=debug,e5172as22_traffic_stanley_driver=debug",
+        0 => "traffic=warn,e5172as22_traffic_influxdb_driver=warn",
+        1 => "traffic=info,e5172as22_traffic_influxdb_driver=info",
+        2 | _ => "traffic=debug,e5172as22_traffic_influxdb_driver=debug",
     };
     let filter = env_logger::Env::default().default_filter_or(default_log_filter);
     env_logger::Builder::from_env(filter).init();
 }
 
 fn get_password_from_environment_variable() -> Result<String, Box<dyn std::error::Error>> {
-    let password = env::var_os("STANLEY_PASSWORD")
-        .ok_or_else(|| TrafficError::new("Missing environment variable STANLEY_PASSWORD".to_string()))?
+    let password = env::var_os("INFLUXDB_PASSWORD")
+        .ok_or_else(|| TrafficError::new("Missing environment variable INFLUXDB_PASSWORD".to_string()))?
         .into_string()
         .map_err(|_| {
-            TrafficError::new("Invalid STANLEY_PASSWORD environment variable content".to_string())
+            TrafficError::new("Invalid INFLUXDB_PASSWORD environment variable content".to_string())
         })?;
 
-    debug!("Removing STANLEY_PASSWORD from environment");
-    env::remove_var("STANLEY_PASSWORD");
+    debug!("Removing INFLUXDB_PASSWORD from environment");
+    env::remove_var("INFLUXDB_PASSWORD");
 
     Ok(password)
 }
@@ -215,37 +223,37 @@ fn clear_traffic(
     Ok(())
 }
 
-#[derive(Debug, Serialize)]
-struct PayloadChunk<'a> {
-    readings: Vec<(i64, f64)>,
-    path: &'a str,
-}
-
-type Payload<'a> = Vec<PayloadChunk<'a>>;
-
-fn post_reading_to_stanley(
+fn post_reading_to_influxdb(
         traffic: i64,
         base_url: &reqwest::Url,
         username: &str,
         password: &str,
-        path: &str,
+        database: &str,
+        tags: Vec<&str>,
         client: &reqwest::Client
     ) -> Result<(), Box<dyn std::error::Error>> {
-    let url = base_url.join("/api/v1/post")?;
+    info!("Posting traffic to Influxdb");
+    let url = base_url.join(&format!("/write?db={}", database))?;
     let now: i64 = Utc::now().timestamp_nanos();
-    let payload_chunk = PayloadChunk {
-        readings: vec![(now, traffic as f64)],
-        path,
-    };
-    let payload: Payload = vec![payload_chunk];
+    let tags = if tags.len() > 0 {
+            format!(",{}", tags.join(","))
+        } else {
+            "".to_string()
+        };
+    let body = format!(
+        "traffic{tags} month_cumulative={traffic} {timestamp}",
+        tags=tags,
+        traffic=traffic,
+        timestamp=now,
+    );
     let encoded = b64encode(format!("{}:{}", username, password).as_bytes());
     let authorization = format!("Basic {}", encoded);
+    debug!("Body: {:?}", &body);
     let request = client.post(url)
         .header(reqwest::header::AUTHORIZATION, authorization)
-        .json(&payload)
+        .body(body)
         .build()?;
     debug!("Sending request: {:?}", request);
-    debug!("Payload: {:?}", serde_json::to_string(&payload));
     client.execute(request)?
         .error_for_status()?;
 
