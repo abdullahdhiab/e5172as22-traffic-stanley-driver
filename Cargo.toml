@@ -1,9 +1,9 @@
 [package]
-name = "e5172as22-traffic-stanley-driver"
+name = "e5172as22-traffic-influxdb-driver"
 version = "3.0.0"
-repository = "https://gitlab.com/claudio.mattera/e5172as22-traffic-stanley-driver"
+repository = "https://gitlab.com/claudio.mattera/e5172as22-traffic-influxdb-driver"
 authors = ["Claudio Mattera <claudio@mattera.it>"]
-description = "Track traffic in router Huawei E5172As-22 and stores in a Stanley database"
+description = "Track traffic in router Huawei E5172As-22 and stores in an Influxdb database"
 edition = "2018"
 license = "MIT"
 publish = false
@@ -13,7 +13,7 @@ name = "traffic"
 path = "src/lib.rs"
 
 [[bin]]
-name = "e5172as22-traffic-stanley-driver"
+name = "e5172as22-traffic-influxdb-driver"
 path = "src/main.rs"
 
 [dependencies]

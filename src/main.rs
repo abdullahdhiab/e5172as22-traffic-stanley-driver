@@ -171,9 +171,9 @@ fn parse_command_line() -> ArgMatches<'static> {
 
 fn setup_logging(verbosity: u64) {
     let default_log_filter = match verbosity {
-        0 => "traffic=warn,e5172as22_traffic_stanley_driver=warn",
-        1 => "traffic=info,e5172as22_traffic_stanley_driver=info",
-        2 | _ => "traffic=debug,e5172as22_traffic_stanley_driver=debug",
+        0 => "traffic=warn,e5172as22_traffic_influxdb_driver=warn",
+        1 => "traffic=info,e5172as22_traffic_influxdb_driver=info",
+        2 | _ => "traffic=debug,e5172as22_traffic_influxdb_driver=debug",
     };
     let filter = env_logger::Env::default().default_filter_or(default_log_filter);
     env_logger::Builder::from_env(filter).init();
