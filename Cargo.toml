@@ -1,6 +1,6 @@
 [package]
 name = "e5172as22-traffic-stanley-driver"
-version = "2.0.0"
+version = "3.0.0"
 repository = "https://gitlab.com/claudio.mattera/e5172as22-traffic-stanley-driver"
 authors = ["Claudio Mattera <claudio@mattera.it>"]
 description = "Track traffic in router Huawei E5172As-22 and stores in a Stanley database"
