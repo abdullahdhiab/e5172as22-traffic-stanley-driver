@@ -71,7 +71,7 @@ pub fn clear_statistics(
     client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
-    debug!("Logging out");
+    debug!("Clearing traffic statistics");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
     let mut headers = reqwest::header::HeaderMap::new();
