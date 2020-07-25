@@ -5,7 +5,7 @@ An application to fetch traffic statistics from GSM router Huawei E5172As-22.
 
 https://gitlab.com/claudiomattera/e5172as22-traffic-stanley-driver/
 
-Copyright Claudio Mattera 2019
+Copyright Claudio Mattera 2020
 
 When using a GSM router, often the connection is capped to a monthly total traffic, depending on the specific plan available on the SIM card.
 This application logs in to the router's web interface, retrieves the current total traffic and stores it in a [Stanley] database.
