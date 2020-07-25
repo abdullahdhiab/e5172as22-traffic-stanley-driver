@@ -1,4 +1,4 @@
-// Copyright Claudio Mattera 2019.
+// Copyright Claudio Mattera 2020.
 // Distributed under the MIT License.
 // See accompanying file License.txt, or online at
 // https://opensource.org/licenses/MIT
@@ -8,12 +8,12 @@ use log::*;
 pub mod error;
 pub mod types;
 
-use crate::error::*;
+use crate::error::TrafficError;
 use crate::types::Duration;
 
 pub fn login(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     username: &str,
     password: &str,
 ) -> Result<u64, TrafficError> {
@@ -40,19 +40,15 @@ pub fn login(
             let session_id: u64 = session_id.parse()?;
             return Ok(session_id);
         }
-        return Err(TrafficError::new(
-            "Did not receive a new session id".to_string(),
-        ));
+        return Err(TrafficError::NoSessionId);
     }
 
-    Err(TrafficError::new(
-        "Did not receive a new cookie".to_string(),
-    ))
+    Err(TrafficError::NoCookie)
 }
 
 pub fn logout(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
     debug!("Logging out");
@@ -72,7 +68,7 @@ pub fn logout(
 
 pub fn clear_statistics(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
     debug!("Logging out");
@@ -94,7 +90,7 @@ pub fn clear_statistics(
 
 pub fn get_overview(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<i64, TrafficError> {
     debug!("Getting overview");
@@ -112,7 +108,7 @@ pub fn get_overview(
         .headers(headers)
         .build()?;
 
-    let mut response = process_request(&client, request)?;
+    let response = process_request(&client, request)?;
 
     let mut text = response.text()?;
 
@@ -141,17 +137,17 @@ pub fn get_overview(
             debug!("Livetime: {}", livetime);
             Ok(total_traffic)
         } else {
-            Err(TrafficError::new("No closing brace".to_string()))
+            Err(TrafficError::NoClosingBrace)
         }
     } else {
-        Err(TrafficError::new("No WanStatistics structure".to_string()))
+        Err(TrafficError::NoWanStatistics)
     }
 }
 
 fn process_request(
-    client: &reqwest::Client,
-    request: reqwest::Request,
-) -> Result<reqwest::Response, TrafficError> {
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+) -> Result<reqwest::blocking::Response, TrafficError> {
     let url = request.url().clone();
     debug!("T {} -> {}", "this", url);
     debug!("{} {} HTTP/1.1.", request.method(), url);

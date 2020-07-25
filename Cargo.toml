@@ -1,32 +1,39 @@
 [package]
-name = "e5172as22-traffic-influxdb-driver"
+name = "e5172as22-traffic-reader"
 version = "3.0.0"
-repository = "https://gitlab.com/claudio.mattera/e5172as22-traffic-influxdb-driver"
+repository = "https://gitlab.com/claudio.mattera/e5172as22-traffic-reader"
 authors = ["Claudio Mattera <claudio@mattera.it>"]
-description = "Track traffic in router Huawei E5172As-22 and stores in an Influxdb database"
+description = "Track traffic in router Huawei E5172As-22"
 edition = "2018"
 license = "MIT"
 publish = false
+
+[features]
+default = ["influxdb"]
+influxdb = ["base64"]
 
 [lib]
 name = "traffic"
 path = "src/lib.rs"
 
 [[bin]]
-name = "e5172as22-traffic-influxdb-driver"
+name = "e5172as22-traffic-reader"
 path = "src/main.rs"
 
 [dependencies]
 log = "0.4"
 env_logger = "0.7"
+anyhow = "1"
+thiserror = "1"
 serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
 clap = "2.33"
-chrono = "0.4"
-base64 = "0.11"
-
+url = "2.1"
 
 [dependencies.reqwest]
-version = "0.9"
+version = "0.10"
 default-features = false
-features = ["rustls-tls"]
+features = ["rustls-tls", "blocking"]
+
+[dependencies.base64]
+version = "0.11"
+optional = true
