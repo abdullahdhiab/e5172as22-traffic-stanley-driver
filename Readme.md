@@ -45,7 +45,7 @@ I have not been able to figure out what hashing and encoding algorithm is was us
 
 ~~~~text
 > e5172as22-traffic-reader --help
-e5172as22-traffic-reader 3.0.0
+e5172as22-traffic-reader 4.0.0
 Claudio Mattera <claudio@mattera.it>
 Track traffic in router Huawei E5172As-22
 
