@@ -56,7 +56,8 @@ fn inner() -> Result<(), Box<dyn std::error::Error>> {
 
     match matches.subcommand() {
         ("read", Some(_)) => {
-            read_traffic(&router_base_url, &client, router_username, router_password)?;
+            let total_traffic = read_traffic(&router_base_url, &client, router_username, router_password)?;
+            println!("{}", total_traffic);
         }
         ("clear", Some(_)) => clear_traffic(&router_base_url, &client, router_username, router_password)?,
         ("read-and-store", Some(subcommand)) => {
