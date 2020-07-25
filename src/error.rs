@@ -20,6 +20,9 @@ pub enum TrafficError {
     #[error("No WanStatistics structure found")]
     NoWanStatistics,
 
+    #[error("Invalid WanStatistics structure found")]
+    InvalidWanStatistics,
+
     #[error("{0}")]
     Custom(String),
 
@@ -37,6 +40,9 @@ pub enum TrafficError {
 
     #[error("Header error")]
     HeaderError(#[from] reqwest::header::ToStrError),
+
+    #[error("Invalid header value")]
+    InvalidHeaderError(#[from] http::header::InvalidHeaderValue),
 
     #[error("Serialization error")]
     SerializationError(#[from] serde_json::error::Error),

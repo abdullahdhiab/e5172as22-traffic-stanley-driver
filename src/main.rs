@@ -39,9 +39,16 @@ fn inner() -> Result<()> {
 
     setup_logging(matches.occurrences_of("v"));
 
-    let router_base_url = reqwest::Url::parse(&matches.value_of("router-url").unwrap())?;
-    let router_username = matches.value_of("router-username").unwrap();
-    let router_password = matches.value_of("router-password").unwrap();
+    let router_base_url = matches
+        .value_of("router-url")
+        .map(|s| reqwest::Url::parse(&s))
+        .expect("Missing argument router-url")?;
+    let router_username = matches
+        .value_of("router-username")
+        .expect("Missing argument router-username");
+    let router_password = matches
+        .value_of("router-password")
+        .expect("Missing argument router-password");
 
     let mut client_builder = reqwest::blocking::ClientBuilder::new();
     if matches.is_present("ignore-certificates") {
@@ -68,11 +75,21 @@ fn inner() -> Result<()> {
 
         #[cfg(feature = "influxdb")]
         ("read-and-store", Some(subcommand)) => {
-            let influxdb_base_url = reqwest::Url::parse(&subcommand.value_of("influxdb-url").unwrap())?;
-            let influxdb_username = subcommand.value_of("influxdb-username").unwrap();
+            let influxdb_base_url = subcommand
+                .value_of("influxdb-url")
+                .map(|s| reqwest::Url::parse(&s))
+                .expect("Missing argument influxdb-url")?;
+            let influxdb_username = subcommand
+                .value_of("influxdb-username")
+                .expect("Missing argument influxdb-username");
             let influxdb_password = get_password_from_environment_variable()?;
-            let influxdb_database = subcommand.value_of("influxdb-database").unwrap();
-            let influxdb_tags = subcommand.values_of("influxdb-tag").unwrap().collect();
+            let influxdb_database = subcommand
+                .value_of("influxdb-database")
+                .expect("Missing argument influxdb-database");
+            let influxdb_tags = subcommand
+                .values_of("influxdb-tag")
+                .expect("Missing argument influxdb-tag")
+                .collect();
 
             let total_traffic = read_traffic(&router_base_url, &client, router_username, router_password)
                 .context("Reading traffic statistics")?;
