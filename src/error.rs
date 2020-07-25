@@ -1,63 +1,49 @@
-// Copyright Claudio Mattera 2019.
+// Copyright Claudio Mattera 2020.
 // Distributed under the MIT License.
 // See accompanying file License.txt, or online at
 // https://opensource.org/licenses/MIT
 
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct TrafficError(String);
+#[derive(Error, Debug)]
+pub enum TrafficError {
 
-impl TrafficError {
-    pub fn new(message: String) -> Self {
-        Self(message)
-    }
-}
+    #[error("Did not receive a session id")]
+    NoSessionId,
 
-impl std::error::Error for TrafficError {
-    fn description(&self) -> &str {
-        &self.0
-    }
-}
+    #[error("Did not receive a new cookie")]
+    NoCookie,
 
-impl fmt::Display for TrafficError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+    #[error("No closing brace found")]
+    NoClosingBrace,
 
-impl From<std::io::Error> for TrafficError {
-    fn from(error: std::io::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
+    #[error("No WanStatistics structure found")]
+    NoWanStatistics,
 
-impl From<std::num::ParseIntError> for TrafficError {
-    fn from(error: std::num::ParseIntError) -> Self {
-        TrafficError(error.to_string())
-    }
-}
+    #[error("Invalid WanStatistics structure found")]
+    InvalidWanStatistics,
 
-impl From<reqwest::Error> for TrafficError {
-    fn from(error: reqwest::Error) -> Self {
-        TrafficError(error.to_string())
-    }
-}
+    #[error("{0}")]
+    Custom(String),
 
-impl From<reqwest::UrlError> for TrafficError {
-    fn from(error: reqwest::UrlError) -> Self {
-        TrafficError(error.to_string())
-    }
-}
+    #[error("IO error")]
+    IoError(#[from] std::io::Error),
 
-impl From<reqwest::header::ToStrError> for TrafficError {
-    fn from(error: reqwest::header::ToStrError) -> Self {
-        TrafficError(error.to_string())
-    }
-}
+    #[error("Parse error")]
+    ParseError(#[from] std::num::ParseIntError),
 
-impl From<serde_json::error::Error> for TrafficError {
-    fn from(error: serde_json::error::Error) -> Self {
-        TrafficError(error.to_string())
-    }
+    #[error("Reqwest error")]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[error("Url error")]
+    UrlError(#[from] url::ParseError),
+
+    #[error("Header error")]
+    HeaderError(#[from] reqwest::header::ToStrError),
+
+    #[error("Invalid header value")]
+    InvalidHeaderError(#[from] http::header::InvalidHeaderValue),
+
+    #[error("Serialization error")]
+    SerializationError(#[from] serde_json::error::Error),
 }

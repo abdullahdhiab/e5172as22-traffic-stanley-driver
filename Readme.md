@@ -1,14 +1,14 @@
-E5172As-22 Traffic Stanley Driver
+E5172As-22 Traffic Reader
 ====
 
 An application to fetch traffic statistics from GSM router Huawei E5172As-22.
 
-https://gitlab.com/claudiomattera/e5172as22-traffic-stanley-driver/
+https://gitlab.com/claudiomattera/e5172as22-traffic-reader/
 
-Copyright Claudio Mattera 2019
+Copyright Claudio Mattera 2020
 
 When using a GSM router, often the connection is capped to a monthly total traffic, depending on the specific plan available on the SIM card.
-This application logs in to the router's web interface, retrieves the current total traffic and stores it in a [Stanley] database.
+This application logs in to the router's web interface, retrieves the current total traffic and prints it to the console, or optionally stores it in a [InfluxDB] database.
 It also clears the total traffic on the router.
 
 You are free to copy, modify, and distribute Stanley with attribution under the terms of the MIT license. See the `License.txt` file for details.
@@ -19,7 +19,7 @@ Technology
 
 This application is written in [Rust], a type-safe system language, and uses [Stanley] database to store data.
 
-[Stanley]: https://gitlab.com/claudiomattera/stanley/
+[InfluxDB]: https://www.influxdata.com/products/influxdb-overview/
 
 
 Installation
@@ -37,20 +37,20 @@ Otherwise, precompiled binaries could be available in the repository (check the 
 Usage
 ----
 
-This application is made of a single command-line executable `e5172as22-traffic-stanley-driver` which can be run as follows.
+This application is made of a single command-line executable `e5172as22-traffic-reader` which can be run as follows.
 
 The router password must be encoded according to the router configuration.
 I have not been able to figure out what hashing and encoding algorithm is was used, but the encoded password can be obtained using a network analyser and manually log on to the router.
 
 
 ~~~~text
-> e5172as22-traffic-stanley-driver --help
-e5172as22-traffic-stanley-driver 2.0.0
+> e5172as22-traffic-reader --help
+e5172as22-traffic-reader 4.0.0
 Claudio Mattera <claudio@mattera.it>
-Track traffic in router Huawei E5172As-22 and stores in a Stanley database
+Track traffic in router Huawei E5172As-22
 
 USAGE:
-    e5172as22-traffic-stanley-driver [FLAGS] [OPTIONS] --router-password <router-password> --router-url <router-url> --router-username <router-username> [SUBCOMMAND]
+    e5172as22-traffic-reader [FLAGS] [OPTIONS] --router-password <router-password> --router-url <router-url> --router-username <router-username> [SUBCOMMAND]
 
 FLAGS:
     -h, --help                   Prints help information
@@ -68,8 +68,7 @@ SUBCOMMANDS:
     clear             Clears traffic data in the router
     help              Prints this message or the help of the given subcommand(s)
     read              Reads traffic data from the router
-    read-and-store    Reads traffic data from the router and stores it to a Stanley server
+    read-and-store    Reads traffic data from the router and stores it to an Influxdb server
 
-Stanley password is read from environment variable STANLEY_PASSWORD
-
+Influxdb password is read from environment variable INFLUXDB_PASSWORD
 ~~~~

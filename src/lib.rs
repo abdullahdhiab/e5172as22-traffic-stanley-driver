@@ -1,4 +1,4 @@
-// Copyright Claudio Mattera 2019.
+// Copyright Claudio Mattera 2020.
 // Distributed under the MIT License.
 // See accompanying file License.txt, or online at
 // https://opensource.org/licenses/MIT
@@ -8,12 +8,12 @@ use log::*;
 pub mod error;
 pub mod types;
 
-use crate::error::*;
+use crate::error::TrafficError;
 use crate::types::Duration;
 
 pub fn login(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     username: &str,
     password: &str,
 ) -> Result<u64, TrafficError> {
@@ -22,7 +22,7 @@ pub fn login(
     let url = base_url.join("/index/login.cgi")?;
 
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, "Language=en_us.".parse().unwrap());
+    headers.insert(reqwest::header::COOKIE, "Language=en_us.".parse()?);
 
     let request = client.post(url)
         .form(&params)
@@ -33,33 +33,29 @@ pub fn login(
 
     if let Some(cookie) = response.headers().get(reqwest::header::SET_COOKIE) {
         let mut cookie = cookie.to_str()?.to_string();
-        let index = cookie.find(';').unwrap();
+        let index = cookie.find(';').ok_or(TrafficError::NoCookie)?;
         cookie.truncate(index);
         if cookie.find("SessionID_R3=").is_some() {
             let session_id = cookie.split_off("SessionID_R3=".len());
             let session_id: u64 = session_id.parse()?;
             return Ok(session_id);
         }
-        return Err(TrafficError::new(
-            "Did not receive a new session id".to_string(),
-        ));
+        return Err(TrafficError::NoSessionId);
     }
 
-    Err(TrafficError::new(
-        "Did not receive a new cookie".to_string(),
-    ))
+    Err(TrafficError::NoCookie)
 }
 
 pub fn logout(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
     debug!("Logging out");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
+    headers.insert(reqwest::header::COOKIE, cookie.parse()?);
 
     let url = base_url.join("/index/logout.cgi")?;
     let request = client.post(url)
@@ -72,14 +68,14 @@ pub fn logout(
 
 pub fn clear_statistics(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<(), TrafficError> {
-    debug!("Logging out");
+    debug!("Clearing traffic statistics");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
+    headers.insert(reqwest::header::COOKIE, cookie.parse()?);
 
     let url = base_url.join("/html/status/cleanWanStatisticsData.cgi")?;
     let params = [("RequestFile", "/html/status/overview.asp")];
@@ -94,17 +90,19 @@ pub fn clear_statistics(
 
 pub fn get_overview(
     base_url: &reqwest::Url,
-    client: &reqwest::Client,
+    client: &reqwest::blocking::Client,
     session_id: u64,
 ) -> Result<i64, TrafficError> {
     debug!("Getting overview");
 
     let cookie = format!("Language=en_us; SessionID_R3={}", session_id);
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
+    headers.insert(reqwest::header::COOKIE, cookie.parse()?);
     headers.insert(
         reqwest::header::REFERER,
-        "http://192.168.1.1/index/login.cgi".parse().unwrap(),
+        base_url.join("/index/login.cgi")?
+            .as_str()
+            .parse()?,
     );
 
     let url = base_url.join("/html/status/overview.asp")?;
@@ -112,7 +110,7 @@ pub fn get_overview(
         .headers(headers)
         .build()?;
 
-    let mut response = process_request(&client, request)?;
+    let response = process_request(&client, request)?;
 
     let mut text = response.text()?;
 
@@ -124,34 +122,34 @@ pub fn get_overview(
             let text = text.replace("'", "\"");
             let dict: serde_json::Value = serde_json::from_str(&text)?;
             let upvolume: i64 = dict
-                .get("upvolume").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
+                .get("upvolume").ok_or(TrafficError::InvalidWanStatistics)?
+                .as_str().ok_or(TrafficError::InvalidWanStatistics)?
+                .parse()?;
             let downvolume: i64 = dict
-                .get("downvolume").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
+                .get("downvolume").ok_or(TrafficError::InvalidWanStatistics)?
+                .as_str().ok_or(TrafficError::InvalidWanStatistics)?
+                .parse()?;
             let livetime: u64 = dict
-                .get("liveTime").unwrap()
-                .as_str().unwrap()
-                .parse().unwrap();
+                .get("liveTime").ok_or(TrafficError::InvalidWanStatistics)?
+                .as_str().ok_or(TrafficError::InvalidWanStatistics)?
+                .parse()?;
             let livetime = Duration::from_secs(livetime);
             let total_traffic = upvolume + downvolume;
             debug!("Total traffic: {}", total_traffic);
             debug!("Livetime: {}", livetime);
             Ok(total_traffic)
         } else {
-            Err(TrafficError::new("No closing brace".to_string()))
+            Err(TrafficError::NoClosingBrace)
         }
     } else {
-        Err(TrafficError::new("No WanStatistics structure".to_string()))
+        Err(TrafficError::NoWanStatistics)
     }
 }
 
 fn process_request(
-    client: &reqwest::Client,
-    request: reqwest::Request,
-) -> Result<reqwest::Response, TrafficError> {
+    client: &reqwest::blocking::Client,
+    request: reqwest::blocking::Request,
+) -> Result<reqwest::blocking::Response, TrafficError> {
     let url = request.url().clone();
     debug!("T {} -> {}", "this", url);
     debug!("{} {} HTTP/1.1.", request.method(), url);
