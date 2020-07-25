@@ -100,7 +100,9 @@ pub fn get_overview(
     headers.insert(reqwest::header::COOKIE, cookie.parse()?);
     headers.insert(
         reqwest::header::REFERER,
-        "http://192.168.1.1/index/login.cgi".parse()?,
+        base_url.join("/index/login.cgi")?
+            .as_str()
+            .parse()?,
     );
 
     let url = base_url.join("/html/status/overview.asp")?;
